@@ -116,6 +116,32 @@ export function normalizeFullwidthMarkdownImageParentheses(content: string): str
   return parts.join('')
 }
 
+// A real resource-catalog handle is base64url of 16+ bytes (22+ chars). Shorter
+// tokens (`resource://short`, sandbox artifact names) and multi-segment paths
+// (`resource://tenant/1/a.png`) belong to other ref machinery, not here. The
+// `](` / `]（` lookbehinds skip refs already used as a Markdown destination
+// (including a fullwidth one not yet repaired), so the rewrite never wraps twice.
+const BARE_RESOURCE_IMAGE_REF_RE =
+  /(?<![\w/+.'"`])(?<!\]\()(?<!\]（)resource:\/\/[A-Za-z0-9_-]{16,}/g
+
+/**
+ * Render a bare `resource://<handle>` reference in prose as an image.
+ *
+ * A model often echoes a knowledge-image handle as plain text — sometimes
+ * inside Chinese parentheses — instead of `![](resource://…)`, so the answer
+ * renders no picture even though the resource resolves. Refs already inside a
+ * Markdown destination, HTML attribute, URL, or code span are left untouched;
+ * the rewrite is idempotent.
+ */
+export function normalizeBareResourceImageRefs(content: string): string {
+  if (!content || !content.includes('resource://')) return content
+  const parts = content.split(COMPLETE_MARKDOWN_CODE_RE)
+  for (let i = 0; i < parts.length; i += 2) {
+    parts[i] = parts[i].replace(BARE_RESOURCE_IMAGE_REF_RE, match => `![](${match})`)
+  }
+  return parts.join('')
+}
+
 function legacyImageField(body: string, pattern: RegExp): string {
   const value = body.match(pattern)?.[1] || ''
   return value.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim()
@@ -470,10 +496,11 @@ export function renderChatMarkdown(rawMarkdown: unknown, options: RenderChatMark
   const citationSafeText = stripIncompleteCitationTag(imageContextSafeText)
   const { text: tagSafe, tags } = preserveCitationTags(citationSafeText)
   const normalizedImageMarkdown = normalizeFullwidthMarkdownImageParentheses(tagSafe)
+  const bareResourceSafe = normalizeBareResourceImageRefs(normalizedImageMarkdown)
   // Skill-generated file names routinely contain spaces and parentheses, which
   // marked would split the destination on. Collapse each reference into a
   // single token before parsing.
-  const artifactSafe = normalizeSandboxArtifactRefs(normalizedImageMarkdown)
+  const artifactSafe = normalizeSandboxArtifactRefs(bareResourceSafe)
   const imageSafe = replaceIncompleteImageWithPlaceholder(artifactSafe)
   const mathSafe = preprocessMathDelimiters(imageSafe)
   const restoredTags = restoreCitationTags(mathSafe, tags)

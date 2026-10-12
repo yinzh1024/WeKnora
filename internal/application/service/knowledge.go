@@ -84,6 +84,13 @@ type knowledgeService struct {
 	// which has a no-op fallback. See knowledge_span_tracker.go.
 	spanTracker SpanTracker
 	audit       interfaces.AuditLogService
+
+	// siblingRecheckMu guards siblingRecheckTimers: one debounce timer per
+	// knowledge base for the sibling-image recheck task. Every file creation
+	// and every parse that leaves relative image references unresolved resets
+	// it, so the check fires only after uploads in that KB go quiet.
+	siblingRecheckMu     sync.Mutex
+	siblingRecheckTimers map[string]*time.Timer
 }
 
 const (

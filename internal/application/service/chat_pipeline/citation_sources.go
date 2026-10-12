@@ -152,6 +152,9 @@ func (p *PluginMerge) attachCitationSources(ctx context.Context, results []*type
 			source.ParentChunkID = c.ParentChunkID
 			source.SourceLocators = c.SourceLocators
 			source.ImageInfo = c.ImageInfo
+			if source.ImageInfo == "" {
+				source.ImageInfo = r.ImageInfo
+			}
 			source.StartAt = c.StartAt
 			source.EndAt = c.EndAt
 			source.ContentRevision = c.ContentRevision

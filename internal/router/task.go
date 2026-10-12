@@ -293,6 +293,9 @@ func RunAsynqServer(params AsynqTaskParams) *asynq.ServeMux {
 	// Register knowledge list reparse handler
 	mux.HandleFunc(types.TypeKnowledgeListReparse, params.KnowledgeService.ProcessKnowledgeListReparse)
 
+	// Register the debounced sibling-image recheck handler
+	mux.HandleFunc(types.TypeKnowledgeSiblingRecheck, params.KnowledgeService.ProcessSiblingRecheck)
+
 	// Register index delete handler
 	mux.HandleFunc(types.TypeIndexDelete, params.TagService.ProcessIndexDelete)
 

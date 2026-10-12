@@ -47,8 +47,13 @@ func (v *OllamaVLM) Predict(ctx context.Context, imgBytesList [][]byte, prompt s
 				Images:  images,
 			},
 		},
-		Stream:  &streamFlag,
-		Options: map[string]interface{}{"temperature": 0.1},
+		Stream: &streamFlag,
+		// Reasoning-class VLMs (e.g. qwen3-vl-thinking) would otherwise run
+		// an unbounded thinking pass per image, which stalled imports on
+		// resource-constrained hosts. VLM calls are short functional tasks;
+		// disable thinking and cap the output so throughput stays predictable.
+		Think:   &ollamaapi.ThinkValue{Value: false},
+		Options: map[string]interface{}{"temperature": 0.1, "num_predict": 4096},
 	}
 
 	totalImageSize := 0

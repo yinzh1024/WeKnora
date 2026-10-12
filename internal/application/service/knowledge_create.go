@@ -286,6 +286,11 @@ func (s *knowledgeService) CreateKnowledgeFromFile(ctx context.Context,
 
 	enqueueDataTableSummaryIfNeeded(ctx, s.task, tenantID, knowledge.ID, safeFilename, getFileType(safeFilename), kb.SummaryModelID, kb.EmbeddingModelID)
 
+	// Creating any file may be part of a folder upload whose sibling images
+	// are still streaming; arm the per-KB recheck so documents parsed before
+	// their siblings exist get another chance once uploads go quiet.
+	s.scheduleSiblingImageRecheck(ctx, tenantID, kbID)
+
 	logger.Infof(ctx, "Knowledge from file created successfully, ID: %s", knowledge.ID)
 	return knowledge, nil
 }

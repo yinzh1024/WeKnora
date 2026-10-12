@@ -4037,6 +4037,9 @@ func (s *knowledgeService) ProcessDocument(ctx context.Context, t *asynq.Task) e
 	if s.imageResolver != nil && convertResult != nil {
 		fileSvc := s.resolveFileService(ctx, kb)
 		tenantID, _ := ctx.Value(types.TenantIDContextKey).(uint64)
+		// Resolve ![](images/foo.png)-style references against sibling files
+		// uploaded alongside this document before the generic resolver runs.
+		s.injectSiblingImageRefs(ctx, knowledge, fileSvc, convertResult)
 		updatedMarkdown, images, resolveErr := s.imageResolver.ResolveAndStore(ctx, convertResult, fileSvc, tenantID)
 		if resolveErr != nil {
 			logger.Warnf(ctx, "Image resolution partially failed: %v", resolveErr)
@@ -4065,6 +4068,13 @@ func (s *knowledgeService) ProcessDocument(ctx context.Context, t *asynq.Task) e
 	// the file proxies authorize images through resource bindings, and an
 	// unbound extracted image renders broken for org-shared KB viewers (#3342).
 	s.bindStoredImages(ctx, knowledge, storedImages)
+
+	// Relative image references that never resolved (usually because the
+	// sibling uploads were still streaming) are flagged here so the debounced
+	// KB recheck can re-parse this document once the uploads go quiet.
+	if convertResult != nil {
+		s.recordSiblingImageResolution(ctx, knowledge, convertResult.MarkdownContent)
+	}
 
 	var sourceIndex *sourceloc.Index
 	if convertResult != nil {

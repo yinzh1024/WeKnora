@@ -541,6 +541,77 @@ func (k *Knowledge) SetProcessOverrides(o *KnowledgeProcessOverrides) error {
 	return nil
 }
 
+// MetadataKeySiblingImageReparse marks a document whose relative image
+// references (e.g. ![](images/x.jpg)) did not all resolve to sibling uploads
+// during parse. Exported so the repository candidate query can match it.
+const MetadataKeySiblingImageReparse = "sibling_image_reparse"
+
+// SiblingImageReparseState is the value stored under
+// MetadataKeySiblingImageReparse. Refs counts the references left unresolved
+// after the most recent parse; Attempts counts the automatic re-parses the
+// debounced recheck has already submitted, bounding the retry loop when the
+// sibling files genuinely never arrive.
+type SiblingImageReparseState struct {
+	Refs     int `json:"refs"`
+	Attempts int `json:"attempts"`
+}
+
+// SiblingImageReparseState reads the pending sibling-image reparse marker
+// from knowledge metadata. A missing or empty value yields (nil, nil).
+func (k *Knowledge) SiblingImageReparseState() (*SiblingImageReparseState, error) {
+	if k == nil || len(k.Metadata) == 0 {
+		return nil, nil
+	}
+	metadataMap, err := k.Metadata.Map()
+	if err != nil {
+		return nil, err
+	}
+	raw, ok := metadataMap[MetadataKeySiblingImageReparse]
+	if !ok || raw == nil {
+		return nil, nil
+	}
+	bytes, err := json.Marshal(raw)
+	if err != nil {
+		return nil, err
+	}
+	var state SiblingImageReparseState
+	if err := json.Unmarshal(bytes, &state); err != nil {
+		return nil, err
+	}
+	return &state, nil
+}
+
+// SetSiblingImageReparseState merges (state != nil) or removes (state == nil)
+// the pending sibling-image reparse marker in knowledge metadata.
+func (k *Knowledge) SetSiblingImageReparseState(state *SiblingImageReparseState) error {
+	if k == nil {
+		return nil
+	}
+	metadataMap, err := k.Metadata.Map()
+	if err != nil {
+		return err
+	}
+	if state == nil {
+		delete(metadataMap, MetadataKeySiblingImageReparse)
+	} else {
+		bytes, err := json.Marshal(state)
+		if err != nil {
+			return err
+		}
+		var value interface{}
+		if err := json.Unmarshal(bytes, &value); err != nil {
+			return err
+		}
+		metadataMap[MetadataKeySiblingImageReparse] = value
+	}
+	bytes, err := json.Marshal(metadataMap)
+	if err != nil {
+		return err
+	}
+	k.Metadata = JSON(bytes)
+	return nil
+}
+
 // KnowledgeCheckParams defines parameters used to check if knowledge already exists.
 type KnowledgeCheckParams struct {
 	// File parameters

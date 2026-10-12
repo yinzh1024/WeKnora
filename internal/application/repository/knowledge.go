@@ -274,6 +274,31 @@ func (r *knowledgeRepository) ListKnowledgeFolderCounts(
 	return counts, nil
 }
 
+// ListSiblingImageReparseCandidates returns knowledge rows in the knowledge
+// base whose metadata still carries the sibling-image reparse flag —
+// documents whose relative image references (e.g. ![](images/x.jpg)) did not
+// resolve to sibling uploads during their last parse. Rows mid-deletion are
+// excluded; every other parse status is left for the caller to weigh (an
+// in-flight parse must not be superseded by the recheck).
+func (r *knowledgeRepository) ListSiblingImageReparseCandidates(
+	ctx context.Context,
+	tenantID uint64,
+	kbID string,
+) ([]*types.Knowledge, error) {
+	var rows []*types.Knowledge
+	// The metadata column is TEXT on sqlite and JSON elsewhere, so the LIKE
+	// goes through CAST to stay portable across engines.
+	if err := r.db.WithContext(ctx).
+		Where("tenant_id = ? AND knowledge_base_id = ?", tenantID, kbID).
+		Where("parse_status <> ?", types.ParseStatusDeleting).
+		Where("metadata IS NOT NULL AND CAST(metadata AS TEXT) LIKE ?",
+			"%"+types.MetadataKeySiblingImageReparse+"%").
+		Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	return rows, nil
+}
+
 // UpdateKnowledgeFolderPath files the given knowledge entries under folderPath.
 // Only the display/navigation column is touched: chunks, embeddings and the
 // stored file are unaffected, which is why re-filing needs no re-processing.

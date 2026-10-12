@@ -83,6 +83,7 @@ var queueDefinitions = []QueueDefinition{
 	{Name: QueueMaintenance, Pool: WorkerPoolMaintenance, Weight: 1, TaskTypes: []string{
 		TypeFAQImport, TypeKBClone, TypeIndexDelete, TypeKBDelete,
 		TypeKnowledgeListDelete, TypeKnowledgeListReparse, TypeKnowledgeMove,
+		TypeKnowledgeSiblingRecheck,
 	}},
 	{Name: QueueWiki, Pool: WorkerPoolWiki, Weight: 1, TaskTypes: []string{TypeWikiIngest, TypeWikiFinalize}},
 }
@@ -248,6 +249,7 @@ const (
 	TypeKnowledgePostProcess     = "knowledge:post_process"     // 知识后处理任务（统一调度）
 	TypeKnowledgeAutoTag         = "knowledge:auto_tag"         // 文档自动关联知识库已有标签
 	TypeKnowledgeBaseProfile     = "kb:profile"                 // 知识库描述（画像）生成任务
+	TypeKnowledgeSiblingRecheck  = "knowledge:sibling_recheck"  // 知识库相对图片引用静默复查任务（防抖）
 	TypeManualProcess            = "manual:process"             // 手工知识更新任务（cleanup + 重新索引）
 	TypeDataSourceSync           = "datasource:sync"            // 数据源同步任务
 	TypeWikiIngest               = "wiki:ingest"                // Wiki 页面同步任务
@@ -564,6 +566,18 @@ type KnowledgeAutoTagPayload struct {
 	KnowledgeBaseID string `json:"knowledge_base_id"`
 	Language        string `json:"language,omitempty"`
 	Attempt         int    `json:"attempt,omitempty"`
+}
+
+// KnowledgeSiblingRecheckPayload asks the worker to re-check one knowledge
+// base for documents whose relative image references (e.g. ![](images/x.jpg))
+// stayed unresolved during parse — typically because the sibling image uploads
+// were still streaming when the document parsed. The check only acts once the
+// knowledge base has gone quiet (no recent creations).
+type KnowledgeSiblingRecheckPayload struct {
+	TracingContext
+	TenantID        uint64        `json:"tenant_id"`
+	KnowledgeBaseID string        `json:"knowledge_base_id"`
+	Initiator       TaskInitiator `json:"initiator,omitempty"`
 }
 
 // KnowledgeBaseProfilePayload asks the worker to rebuild the generated

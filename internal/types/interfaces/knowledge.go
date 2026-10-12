@@ -221,6 +221,10 @@ type KnowledgeService interface {
 	ProcessKnowledgeListDelete(ctx context.Context, t *asynq.Task) error
 	// ProcessKnowledgeListReparse handles Asynq knowledge list reparse tasks
 	ProcessKnowledgeListReparse(ctx context.Context, t *asynq.Task) error
+	// ProcessSiblingRecheck handles the debounced knowledge-base recheck that
+	// re-parses documents whose relative image references stayed unresolved
+	// while their sibling image uploads were still streaming.
+	ProcessSiblingRecheck(ctx context.Context, t *asynq.Task) error
 	// GetKBCloneProgress retrieves the progress of a knowledge base clone task
 	GetKBCloneProgress(ctx context.Context, taskID string) (*types.KBCloneProgress, error)
 	// SaveKBCloneProgress saves the progress of a knowledge base clone task
@@ -284,6 +288,15 @@ type KnowledgeRepository interface {
 		tenantID uint64,
 		kbID string,
 	) ([]*types.KnowledgeFolderCount, error)
+	// ListSiblingImageReparseCandidates returns knowledge rows in the
+	// knowledge base whose metadata still carries the sibling-image reparse
+	// flag — documents with relative image references (e.g. images/x.jpg)
+	// that did not resolve to sibling uploads during their last parse.
+	ListSiblingImageReparseCandidates(
+		ctx context.Context,
+		tenantID uint64,
+		kbID string,
+	) ([]*types.Knowledge, error)
 	// UpdateKnowledgeFolderPath files the given entries under folderPath.
 	UpdateKnowledgeFolderPath(
 		ctx context.Context,

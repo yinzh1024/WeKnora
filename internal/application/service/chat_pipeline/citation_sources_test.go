@@ -2,6 +2,8 @@ package chatpipeline
 
 import (
 	"context"
+	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/Tencent/WeKnora/internal/types"
@@ -135,4 +137,115 @@ func TestModelHandlesReferenceTheActualExpandedChild(t *testing.T) {
 	messages, _ = prepareMessagesWithModelContext(context.Background(), manage)
 	require.NotContains(t, messages[1].Content, rendered)
 	require.Contains(t, messages[1].Content, "could not be verified")
+}
+
+// A merged text entry carries its image captions only on the merge result;
+// the per-chunk citation sources are rebuilt from stored text chunks whose
+// image_info column is empty. The prompt-time chat enrichment reads the
+// source's ImageInfo, so a source that drops the parent's collection loses
+// every caption next to its image refs.
+func TestExpandCitationSources_TextSourceKeepsCaptionEnrichment(t *testing.T) {
+	imageInfo, err := json.Marshal([]types.ImageInfo{
+		{URL: "resource://img-1", Caption: "流程图：三步审批"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo := &expandChunkRepo{
+		chunks: map[string]*types.Chunk{
+			"t1": {
+				ID: "t1", ParentChunkID: "p1", ChunkType: types.ChunkTypeText, ChunkIndex: 5,
+				KnowledgeID: "doc", KnowledgeBaseID: "kb", IsEnabled: true,
+				Content: "第二步 复核\n\n![demo](resource://img-1)",
+			},
+			"p1": {
+				ID: "p1", ChunkType: types.ChunkTypeParentText, ChunkIndex: 4,
+				KnowledgeID: "doc", KnowledgeBaseID: "kb", IsEnabled: true,
+				Content: "第一步 提交\n\n第二步 复核\n\n![demo](resource://img-1)",
+			},
+		},
+	}
+	plugin := &PluginMerge{chunkRepo: repo}
+	ctx := context.WithValue(context.Background(), types.TenantIDContextKey, uint64(1))
+	result := &types.SearchResult{
+		ID: "merged-1", KnowledgeID: "doc", KnowledgeBaseID: "kb",
+		ChunkType:  string(types.ChunkTypeText),
+		Content:    "第二步 复核\n\n![demo](resource://img-1)",
+		ImageInfo:  string(imageInfo),
+		SubChunkID: []string{"t1"},
+	}
+
+	plugin.attachCitationSources(ctx, []*types.SearchResult{result})
+	if len(result.CitationSources) != 1 {
+		t.Fatalf("citation sources = %d, want 1", len(result.CitationSources))
+	}
+	if result.CitationSources[0].ImageInfo == "" {
+		t.Fatalf("text citation source dropped the merge result's image info")
+	}
+
+	expanded := expandCitationSources([]*types.SearchResult{result})
+	if len(expanded) != 1 {
+		t.Fatalf("expanded results = %d, want 1", len(expanded))
+	}
+	passage := getEnrichedPassageForChat(ctx, expanded[0])
+	if !strings.Contains(passage, "> **Image caption:** 流程图：三步审批") {
+		t.Fatalf("caption was not injected next to the image ref: %q", passage)
+	}
+}
+
+func TestExpandCitationSources_ImageSourceKeepsOwnImageInfo(t *testing.T) {
+	parentInfo, err := json.Marshal([]types.ImageInfo{
+		{URL: "resource://img-1", Caption: "父条目封面"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	childInfo, err := json.Marshal([]types.ImageInfo{
+		{URL: "resource://img-1", Caption: "子图自己的题注"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo := &expandChunkRepo{
+		chunks: map[string]*types.Chunk{
+			"t1": {
+				ID: "t1", ParentChunkID: "p1", ChunkType: types.ChunkTypeText, ChunkIndex: 5,
+				KnowledgeID: "doc", KnowledgeBaseID: "kb", IsEnabled: true,
+				Content: "正文\n\n![demo](resource://img-1)",
+			},
+			"p1": {
+				ID: "p1", ChunkType: types.ChunkTypeParentText,
+				KnowledgeID: "doc", KnowledgeBaseID: "kb", IsEnabled: true,
+				Content: "正文",
+			},
+		},
+		children: map[string][]*types.Chunk{
+			"t1": {
+				{
+					ID: "cap-1", ParentChunkID: "t1", ChunkType: types.ChunkTypeImageCaption,
+					KnowledgeID: "doc", KnowledgeBaseID: "kb", IsEnabled: true,
+					Content: "子图自己的题注", ImageInfo: string(childInfo),
+				},
+			},
+		},
+	}
+	plugin := &PluginMerge{chunkRepo: repo}
+	ctx := context.WithValue(context.Background(), types.TenantIDContextKey, uint64(1))
+	result := &types.SearchResult{
+		ID: "merged-1", KnowledgeID: "doc", KnowledgeBaseID: "kb",
+		ChunkType:  string(types.ChunkTypeText),
+		Content:    "正文\n\n![demo](resource://img-1)",
+		ImageInfo:  string(parentInfo),
+		SubChunkID: []string{"t1"},
+	}
+
+	plugin.attachCitationSources(ctx, []*types.SearchResult{result})
+	if len(result.CitationSources) != 2 {
+		t.Fatalf("citation sources = %d, want 2", len(result.CitationSources))
+	}
+	for _, source := range result.CitationSources {
+		if source.ID == "cap-1" && source.ImageInfo != string(childInfo) {
+			t.Fatalf("image caption source lost its own image info: %q", source.ImageInfo)
+		}
+	}
 }

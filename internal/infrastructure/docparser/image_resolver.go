@@ -625,8 +625,12 @@ func (r *ImageResolver) resolveBareBase64Prefix(
 const (
 	// maxRemoteImageSize is the maximum allowed size for a single remote image download.
 	maxRemoteImageSize = 10 * 1024 * 1024 // 10 MB
-	// maxRemoteImages is the maximum number of remote images to process per document.
-	maxRemoteImages = 30
+	// maxRemoteImages is the maximum number of images to resolve per
+	// document. It also caps data-URI and bare-base64 passes; the original
+	// value of 30 was a conservative bound for remote downloads, but local
+	// byte resolution is cheap and image-heavy markdown documents routinely
+	// exceed it (issue #4029: OneNote-exported notes with hundreds of images).
+	maxRemoteImages = 2000
 	// remoteImageFetchTimeout is the per-image HTTP request timeout.
 	remoteImageFetchTimeout = 15 * time.Second
 )

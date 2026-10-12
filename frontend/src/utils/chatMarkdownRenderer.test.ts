@@ -6,6 +6,7 @@ import {
   closeDanglingStreamingEmphasis,
   createChatMarkdownRenderer,
   markStandaloneStrongParagraphs,
+  normalizeBareResourceImageRefs,
   normalizeFullwidthMarkdownImageParentheses,
   normalizeLegacyImageContextMarkup,
   preprocessMathDelimiters,
@@ -66,6 +67,54 @@ test('normalizeFullwidthMarkdownImageParentheses repairs localized image delimit
 test('normalizeFullwidthMarkdownImageParentheses preserves literal examples in code', () => {
   const code = '`![]（resource://example）`\n```md\n![]（resource://example）\n```'
   assert.equal(normalizeFullwidthMarkdownImageParentheses(code), code)
+})
+
+test('normalizeBareResourceImageRefs wraps a bare catalog handle as an image', () => {
+  const ref = 'resource://LRQXvKlkK4B0wuiknI6IGA'
+  assert.equal(
+    normalizeBareResourceImageRefs(`图6-11 是图像内容（${ref}）`),
+    `图6-11 是图像内容（![](${ref})）`,
+  )
+  assert.equal(
+    normalizeBareResourceImageRefs(`图6-11 是图像内容(${ref})`),
+    `图6-11 是图像内容(![](${ref}))`,
+  )
+  // Idempotent: an existing Markdown destination is never double-wrapped.
+  assert.equal(normalizeBareResourceImageRefs(`![](${ref})`), `![](${ref})`)
+  assert.equal(normalizeBareResourceImageRefs(`![]（${ref}）`), `![]（${ref}）`)
+  // Code spans and fences stay literal.
+  assert.equal(normalizeBareResourceImageRefs(`\`${ref}\``), `\`${ref}\``)
+  assert.equal(
+    normalizeBareResourceImageRefs('```\n' + ref + '\n```'),
+    '```\n' + ref + '\n```',
+  )
+  // Short handles, multi-segment paths, and URL-embedded forms belong to other
+  // ref machinery and stay untouched.
+  assert.equal(normalizeBareResourceImageRefs('resource://short'), 'resource://short')
+  assert.equal(
+    normalizeBareResourceImageRefs('resource://tenant/1/a.png'),
+    'resource://tenant/1/a.png',
+  )
+  assert.equal(
+    normalizeBareResourceImageRefs(`https://example.com/${ref}`),
+    `https://example.com/${ref}`,
+  )
+})
+
+test('renderChatMarkdown renders a bare resource ref as an image', () => {
+  const renderer = createChatMarkdownRenderer({
+    imageRenderer: ({ href }) => `<img src="${href}">`,
+    isValidImageUrl: (href) => href.startsWith('resource://'),
+  })
+  const html = renderChatMarkdown('图6-11 是图像内容（resource://LRQXvKlkK4B0wuiknI6IGA）', {
+    renderer,
+    escapeMarkdown: (text) => text,
+    sanitizeHtml: (value) => value,
+    streaming: false,
+  })
+
+  assert.match(html, /<img src="resource:\/\/LRQXvKlkK4B0wuiknI6IGA">/)
+  assert.doesNotMatch(html, /resource:\/\/LRQXvKlkK4B0wuiknI6IGA<\/p>/)
 })
 
 test('renderChatMarkdown safely renders an image with fullwidth parentheses', () => {

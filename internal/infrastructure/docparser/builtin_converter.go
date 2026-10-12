@@ -21,7 +21,7 @@ var simpleFormats = map[string]bool{
 
 var imageFormats = map[string]bool{
 	"jpg": true, "jpeg": true, "png": true, "gif": true,
-	"bmp": true, "tiff": true, "webp": true,
+	"bmp": true, "tiff": true, "webp": true, "svg": true,
 }
 
 var audioFormats = map[string]bool{
@@ -89,6 +89,11 @@ func imageToResult(fileName string, data []byte) *types.ReadResult {
 	// Encode spaces so the markdown URL is valid and matches the regex in ResolveAndStore.
 	safeRef := strings.ReplaceAll(refPath, " ", "%20")
 	mime := http.DetectContentType(data)
+	// DetectContentType has no SVG signature, so it reports text/xml or
+	// text/plain for a vector image; serve it with its real type instead.
+	if strings.EqualFold(filepath.Ext(fileName), ".svg") {
+		mime = "image/svg+xml"
+	}
 
 	return &types.ReadResult{
 		MarkdownContent: fmt.Sprintf("![%s](%s)", fileName, safeRef),
