@@ -1,0 +1,18 @@
+[Unit]
+Description=WeKnora DocReader gRPC parsing service
+Documentation=https://github.com/Tencent/WeKnora
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/media/yinzh/ext/WeKnora
+Environment=PYTHONPATH=/media/yinzh/ext/WeKnora
+ExecStart=/media/yinzh/ext/WeKnora/docreader/.venv/bin/python -m docreader.main
+Restart=on-failure
+RestartSec=3
+StandardOutput=append:/media/yinzh/ext/WeKnora/data/docreader.log
+StandardError=append:/media/yinzh/ext/WeKnora/data/docreader.log
+
+[Install]
+WantedBy=default.target
